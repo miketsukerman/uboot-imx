@@ -258,6 +258,12 @@ static int mxs_remove_common(phys_addr_t reg_base, u32 fb)
 	if (!fb)
 		return -EINVAL;
 
+	/* 
+	 * FLICKERLESS BOOT: 
+	 * Do not clear the frame buffer address or reset the controller.
+	 * We want the image to persist until the kernel takes over.
+	 */
+#if 0
 	writel(fb, &regs->hw_lcdif_cur_buf_reg);
 	writel(fb, &regs->hw_lcdif_next_buf_reg);
 	writel(LCDIF_CTRL1_VSYNC_EDGE_IRQ, &regs->hw_lcdif_ctrl1_clr);
@@ -268,6 +274,7 @@ static int mxs_remove_common(phys_addr_t reg_base, u32 fb)
 		udelay(1);
 	}
 	mxs_reset_block((struct mxs_register_32 *)&regs->hw_lcdif_ctrl_reg);
+#endif
 
 	return 0;
 }
