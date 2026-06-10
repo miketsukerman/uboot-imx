@@ -945,6 +945,7 @@ dtb-$(CONFIG_ARCH_IMX8M) += \
 	imx8mn-ddr4-ab2.dtb \
 	imx8mn-ab2.dtb \
 	imx8mn-var-som-symphony.dtb \
+	ecu150a1.dtb \
 	imx8mq-mnt-reform2.dtb \
 	imx8mq-phanbell.dtb \
 	imx8mp-data-modul-edm-sbc.dtb \
