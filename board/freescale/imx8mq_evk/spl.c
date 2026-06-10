@@ -52,7 +52,7 @@ static void spl_dram_init(void)
 #else
 	/* ddr init */
 	if (soc_rev() >= CHIP_REV_2_1)
-		ddr_init(&dram_timing);
+		ddr_init(&dram_timing_4g);
 	else
 		ddr_init(&dram_timing_b0);
 #endif
@@ -232,6 +232,14 @@ void spl_board_init(void)
 		if (sec_init())
 			printf("\nsec_init failed!\n");
 	}
+
+#ifndef CONFIG_SPL_USB_SDP_SUPPORT
+	/* Serial download mode */
+	if (is_usb_boot()) {
+		puts("Back to ROM, SDP\n");
+		restore_boot_params();
+	}
+#endif
 
 	init_usb_clk();
 

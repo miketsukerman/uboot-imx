@@ -16,7 +16,7 @@
 #include <usb.h>
 #include <dwc3-uboot.h>
 
-#define UART_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_FSEL1)
+#define UART_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_FSEL1 | PAD_CTL_PUE)
 
 #define WDOG_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_HYS | PAD_CTL_PUE)
 
@@ -269,6 +269,9 @@ int board_late_init(void)
 	env_set("board_rev", "iMX8MQ");
 #endif
 
+	puts("DeviceName is ECU150A1.\n");
+	env_set("devicename", "ecu150a1");
+	env_set("bootargs_ram_capacity", "cma=384M");
 	return 0;
 }
 
