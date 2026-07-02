@@ -25,12 +25,21 @@
 #define WDOG_PAD_CTRL	(PAD_CTL_DSE6 | PAD_CTL_ODE | PAD_CTL_PUE | PAD_CTL_PE)
 
 static iomux_v3_cfg_t const uart_pads[] = {
-	IMX8MM_PAD_UART2_RXD_UART2_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
-	IMX8MM_PAD_UART2_TXD_UART2_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
+	IMX8MM_PAD_SAI3_TXFS_UART2_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
+	IMX8MM_PAD_SAI3_TXC_UART2_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
 };
 
 static iomux_v3_cfg_t const wdog_pads[] = {
 	IMX8MM_PAD_GPIO1_IO02_WDOG1_WDOG_B  | MUX_PAD_CTRL(WDOG_PAD_CTRL),
+};
+
+static iomux_v3_cfg_t const gpio_init_pads[] = {
+	IMX8MM_PAD_SAI5_RXD2_GPIO3_IO23 | MUX_PAD_CTRL(NO_PAD_CTRL),
+	IMX8MM_PAD_SAI5_RXD3_GPIO3_IO24 | MUX_PAD_CTRL(NO_PAD_CTRL),
+	IMX8MM_PAD_GPIO1_IO10_GPIO1_IO10 | MUX_PAD_CTRL(NO_PAD_CTRL),
+	IMX8MM_PAD_SAI3_RXFS_GPIO4_IO28 | MUX_PAD_CTRL(NO_PAD_CTRL),
+	IMX8MM_PAD_GPIO1_IO15_GPIO1_IO15| MUX_PAD_CTRL(NO_PAD_CTRL),
+	IMX8MM_PAD_GPIO1_IO09_GPIO1_IO9| MUX_PAD_CTRL(NO_PAD_CTRL)
 };
 
 #ifdef CONFIG_NAND_MXS
@@ -320,6 +329,22 @@ int board_init(void)
 
 	if (IS_ENABLED(CONFIG_FEC_MXC))
 		setup_fec();
+
+	imx_iomux_v3_setup_multiple_pads(gpio_init_pads, ARRAY_SIZE(gpio_init_pads));
+
+	gpio_request(IMX_GPIO_NR(3, 23), "LVDS_STBY");
+	gpio_request(IMX_GPIO_NR(3, 24), "LVDS_RESET");
+	gpio_request(IMX_GPIO_NR(1, 10), "I2S_EN");
+	gpio_request(IMX_GPIO_NR(4, 28), "RESET_OUT");
+	gpio_request(IMX_GPIO_NR(1, 9), "wdt_en");
+	gpio_request(IMX_GPIO_NR(1, 15), "wdt_trig");
+
+	gpio_direction_output(IMX_GPIO_NR(3, 23), 1);
+	gpio_direction_output(IMX_GPIO_NR(3, 24), 1);
+	gpio_direction_output(IMX_GPIO_NR(1, 10), 1);
+	gpio_direction_output(IMX_GPIO_NR(4, 28), 1);
+	gpio_direction_output(IMX_GPIO_NR(1, 9), 0);
+	gpio_direction_output(IMX_GPIO_NR(1, 15), 1);
 
 	return 0;
 }
