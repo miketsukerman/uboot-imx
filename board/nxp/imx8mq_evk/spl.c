@@ -32,8 +32,8 @@
 #include <asm/arch/imx8m_csu.h>
 #include <asm/arch/imx8m_rdc.h>
 
-extern struct dram_timing_info dram_timing_b0;
 extern struct dram_timing_info dram_timing_4g;
+extern struct dram_timing_info dram_timing;
 
 static void spl_dram_init(void)
 {
@@ -48,10 +48,35 @@ static void spl_dram_init(void)
 	}
 #else
 	/* ddr init */
-	if (soc_rev() >= CHIP_REV_2_1)
+	if (soc_rev() >= CHIP_REV_2_1) {
+		puts("SPL: probing DDR timing profiles\n");
+		phys_size_t ram_size;
+
+		puts("SPL: trying 4GB DDR timing\n");
+		ddr_init(&dram_timing_4g);
+		ram_size = get_ram_size((long *)0x40000000, (long)SZ_4G);
+		printf("SPL: 4GB timing detected %llu MiB RAM\n",
+		       (unsigned long long)(ram_size / SZ_1M));
+		if (ram_size >= SZ_4G) {
+			puts("SPL: selected 4GB DDR timing\n");
+			return;
+		}
+
+		puts("SPL: trying default DDR timing\n");
 		ddr_init(&dram_timing);
-	else
-		ddr_init(&dram_timing_b0);
+		ram_size = get_ram_size((long *)0x40000000, (long)SZ_4G);
+		printf("SPL: default timing detected %llu MiB RAM\n",
+		       (unsigned long long)(ram_size / SZ_1M));
+		if (ram_size >= SZ_1G) {
+			puts("SPL: selected default DDR timing\n");
+			return;
+		}
+
+		panic("No supported DDR timing profile detected\n");
+	} else {
+		panic("Unsupported SOC Revision\n");
+	}
+
 #endif
 }
 
@@ -229,6 +254,14 @@ void spl_board_init(void)
 		if (sec_init())
 			printf("\nsec_init failed!\n");
 	}
+
+#ifndef CONFIG_SPL_USB_SDP_SUPPORT
+	/* Serial download mode */
+	if (is_usb_boot()) {
+		puts("Back to ROM, SDP\n");
+		restore_boot_params();
+	}
+#endif
 
 	init_usb_clk();
 
