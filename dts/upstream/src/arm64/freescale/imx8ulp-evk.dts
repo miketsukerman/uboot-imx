@@ -131,21 +131,6 @@
 	status = "okay";
 };
 
-&flexspi2 {
-	pinctrl-names = "default", "sleep";
-	pinctrl-0 = <&pinctrl_flexspi2_ptd>;
-	pinctrl-1 = <&pinctrl_flexspi2_ptd>;
-	status = "okay";
-
-	mx25uw51345gxdi00: flash@0 {
-		compatible = "jedec,spi-nor";
-		reg = <0>;
-		spi-max-frequency = <200000000>;
-		spi-tx-bus-width = <8>;
-		spi-rx-bus-width = <8>;
-	};
-};
-
 &lpuart5 {
 	/* console */
 	pinctrl-names = "default", "sleep";
@@ -306,27 +291,10 @@
 		>;
 	};
 
-	pinctrl_flexspi2_ptd: flexspi2ptdgrp {
-		fsl,pins = <
-
-			MX8ULP_PAD_PTD12__FLEXSPI2_A_SS0_B	0x42
-			MX8ULP_PAD_PTD13__FLEXSPI2_A_SCLK	0x42
-			MX8ULP_PAD_PTD14__FLEXSPI2_A_DATA3	0x42
-			MX8ULP_PAD_PTD15__FLEXSPI2_A_DATA2	0x42
-			MX8ULP_PAD_PTD16__FLEXSPI2_A_DATA1	0x42
-			MX8ULP_PAD_PTD17__FLEXSPI2_A_DATA0	0x42
-			MX8ULP_PAD_PTD18__FLEXSPI2_A_DQS	0x42
-			MX8ULP_PAD_PTD19__FLEXSPI2_A_DATA7	0x42
-			MX8ULP_PAD_PTD20__FLEXSPI2_A_DATA6	0x42
-			MX8ULP_PAD_PTD21__FLEXSPI2_A_DATA5	0x42
-			MX8ULP_PAD_PTD22__FLEXSPI2_A_DATA4	0x42
-		>;
-	};
-
 	pinctrl_lpuart5: lpuart5grp {
 		fsl,pins = <
-			MX8ULP_PAD_PTF14__LPUART5_TX	0x3
-			MX8ULP_PAD_PTF15__LPUART5_RX	0x3
+			MX8ULP_PAD_PTE6__LPUART5_TX	0x1
+			MX8ULP_PAD_PTE7__LPUART5_RX	0x1
 		>;
 	};
 
@@ -393,4 +361,52 @@
 			MX8ULP_PAD_PTD11__SDHC0_DQS	0x10002
 		>;
 	};
+
+	pinctrl_usdhc2_pte: usdhc2ptegrp {
+		fsl,pins = <
+			MX8ULP_PAD_PTE1__SDHC2_D0	0x3
+			MX8ULP_PAD_PTE0__SDHC2_D1	0x3
+			MX8ULP_PAD_PTE5__SDHC2_D2	0x3
+			MX8ULP_PAD_PTE4__SDHC2_D3	0x3
+			MX8ULP_PAD_PTE2__SDHC2_CLK	0x10002
+			MX8ULP_PAD_PTE3__SDHC2_CMD	0x3
+			MX8ULP_PAD_PTF26__SDHC2_RESET_B	0x3
+			MX8ULP_PAD_PTF27__SDHC2_WP	0x2
+			MX8ULP_PAD_PTF28__SDHC2_CD	0x3
+		>;
+	};
+};
+
+&flexspi2 {
+	status = "okay";
+
+	flash0: w25q64jwiq@0 {
+		reg = <0>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <66000000>;
+	};
+
+	flash1: w25q64jwiq@1 {
+		reg = <1>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "jedec,spi-nor";
+		spi-max-frequency = <66000000>;
+	};
+};
+
+&usdhc2 {
+	assigned-clocks = <&pcc4 IMX8ULP_CLK_USDHC2>;
+	assigned-clock-rates = <396000000>;
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc2_pte>;
+	pinctrl-1 = <&pinctrl_usdhc2_pte>;
+	pinctrl-2 = <&pinctrl_usdhc2_pte>;
+	wp-gpios = <&gpiof 27 GPIO_ACTIVE_HIGH>;
+	cd-gpios = <&gpiof 28 GPIO_ACTIVE_LOW>;
+	bus-width = <4>;
+	keep-power-in-suspend;
+	status = "okay";
 };
