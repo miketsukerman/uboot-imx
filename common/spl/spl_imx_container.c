@@ -11,6 +11,7 @@
 #include <mapmem.h>
 #include <spl.h>
 #include <cpu_func.h>
+#include <asm/unaligned.h>
 #ifdef CONFIG_AHAB_BOOT
 #include <asm/mach-imx/ahab.h>
 #endif
@@ -123,13 +124,17 @@ static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
 		ctnr_log("read_auth_image[%d]: read returned 0x%lx (expected >= 0x%x) into dst %p\n",
 			 image_index, read, images[image_index].size, buf);
 		if (read < images[image_index].size) {
-				printf("%s: failed to load image to a non-secure region\n", __func__);
+			printf("%s: failed to load image to a non-secure region\n", __func__);
 			return NULL;
 		}
 	}
 
 	if (IMX_CTNR_LOG_ENABLED) {
-		u32 *w = (u32 *)buf;
+		u32 w[4];
+		int j;
+
+		for (j = 0; j < 4; j++)
+			w[j] = get_unaligned((u32 *)buf + j);
 
 		ctnr_log("read_auth_image[%d]: first words @dst 0x%llx: %08x %08x %08x %08x\n",
 			 image_index, (unsigned long long)images[image_index].dst,
