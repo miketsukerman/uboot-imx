@@ -218,7 +218,7 @@ static int parse_container(void *addr, u32 *qb_data_off)
 static int get_dev_qbdata_offset(void *dev, int dev_type, unsigned long offset, u32 *qbdata_offset)
 {
 	int ret = 0;
-	u16 ctnr_hdr_align = CONTAINER_HDR_ALIGNMENT;
+	u16 ctnr_hdr_align = container_hdr_alignment();
 	void *buf = kmalloc(ctnr_hdr_align, GFP_KERNEL);
 
 	if (!buf) {
@@ -276,7 +276,7 @@ static int get_dev_qbdata_offset(void *dev, int dev_type, unsigned long offset, 
 static int get_qbdata_offset(void *dev, int dev_type, u32 *qbdata_offset, bool bootdev)
 {
 	u32 offset = get_boot_device_offset(dev, dev_type, bootdev);
-	u16 ctnr_hdr_align = CONTAINER_HDR_ALIGNMENT;
+	u16 ctnr_hdr_align = container_hdr_alignment();
 	u32 cont_offset;
 	int ret, i;
 

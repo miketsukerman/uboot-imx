@@ -170,7 +170,8 @@ int get_container_size(ulong addr, u16 *header_length)
 
 static int get_dev_container_size(void *dev, int dev_type, unsigned long offset, u16 *header_length, bool *v2x_cntr)
 {
-	u8 *buf = malloc(CONTAINER_HDR_ALIGNMENT);
+	u16 ctnr_hdr_align = container_hdr_alignment();
+	u8 *buf = malloc(ctnr_hdr_align);
 	int ret = 0;
 
 	if (!buf) {
@@ -185,11 +186,11 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 
 		count = blk_dread(mmc_get_blk_desc(mmc),
 				  offset / mmc->read_bl_len,
-				  CONTAINER_HDR_ALIGNMENT / mmc->read_bl_len,
+				  ctnr_hdr_align / mmc->read_bl_len,
 				  buf);
 		ctnr_log("get_dev_container_size: MMC read off 0x%lx (sector %lu, %u bytes) -> %lu blocks\n",
 			 offset, offset / mmc->read_bl_len,
-			 CONTAINER_HDR_ALIGNMENT, count);
+			 ctnr_hdr_align, count);
 		if (count == 0) {
 			free(buf);
 			printf("Read container image from MMC/SD failed\n");
@@ -203,7 +204,7 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 		struct spi_flash *flash = (struct spi_flash *)dev;
 
 		ret = spi_flash_read(flash, offset,
-				     CONTAINER_HDR_ALIGNMENT, buf);
+				     ctnr_hdr_align, buf);
 		if (ret != 0) {
 			free(buf);
 			printf("Read container image from QSPI failed\n");
@@ -214,7 +215,7 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 
 #ifdef CONFIG_SPL_NAND_SUPPORT
 	if (dev_type == NAND_DEV) {
-		ret = nand_spl_load_image(offset, CONTAINER_HDR_ALIGNMENT,
+		ret = nand_spl_load_image(offset, ctnr_hdr_align,
 					  buf);
 		if (ret != 0) {
 			free(buf);
@@ -226,12 +227,12 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 
 #ifdef CONFIG_SPL_NOR_SUPPORT
 	if (dev_type == QSPI_NOR_DEV)
-		memcpy(buf, (const void *)offset, CONTAINER_HDR_ALIGNMENT);
+		memcpy(buf, (const void *)offset, ctnr_hdr_align);
 #endif
 
 #ifdef CONFIG_SPL_BOOTROM_SUPPORT
 	if (dev_type == ROM_API_DEV) {
-		ret = spl_romapi_read(offset, CONTAINER_HDR_ALIGNMENT, buf);
+		ret = spl_romapi_read(offset, ctnr_hdr_align, buf);
 		if (!ret) {
 			free(buf);
 			printf("Read container image from ROM API failed\n");
@@ -242,7 +243,7 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 
 #ifdef CONFIG_SPL_RAM_SUPPORT
 	if (dev_type == RAM_DEV)
-		memcpy(buf, (const void *)offset, CONTAINER_HDR_ALIGNMENT);
+		memcpy(buf, (const void *)offset, ctnr_hdr_align);
 #endif
 
 
@@ -405,6 +406,7 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 	int value_container[3] = {};
 	u16 hdr_length;
 	bool v2x_fw = false;
+	u16 ctnr_hdr_align = container_hdr_alignment();
 
 	offset[0] = get_boot_device_offset(dev, dev_type);
 	ctnr_log("get_imageset_end: dev_type %d seco offset[0] 0x%lx\n",
@@ -421,7 +423,7 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 	debug("seco container size 0x%x\n", value_container[0]);
 
 	if (is_imx8dxl() || is_imx95() || is_imx94() || is_imx952()) {
-		offset[1] = ALIGN(hdr_length, CONTAINER_HDR_ALIGNMENT) + offset[0];
+		offset[1] = ALIGN(hdr_length, ctnr_hdr_align) + offset[0];
 		ctnr_log("get_imageset_end: v2x offset[1] 0x%lx\n", offset[1]);
 
 		value_container[1] = get_dev_container_size(dev, dev_type, offset[1], &hdr_length, &v2x_fw);
@@ -434,14 +436,14 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 
 		if (v2x_fw) {
 			debug("v2x container size 0x%x\n", value_container[1]);
-			offset[2] = ALIGN(hdr_length, CONTAINER_HDR_ALIGNMENT) + offset[1];
+			offset[2] = ALIGN(hdr_length, ctnr_hdr_align) + offset[1];
 		} else {
 			printf("no v2x container included\n");
 			offset[2] = offset[1];
 		}
 	} else {
 		/* Skip offset[1] */
-		offset[2] = ALIGN(hdr_length, CONTAINER_HDR_ALIGNMENT) + offset[0];
+		offset[2] = ALIGN(hdr_length, ctnr_hdr_align) + offset[0];
 	}
 
 	ctnr_log("get_imageset_end: scu/next offset[2] 0x%lx\n", offset[2]);

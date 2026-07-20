@@ -181,8 +181,9 @@ static int read_auth_container(struct spl_image_info *spl_image,
 	struct container_hdr *authhdr;
 	u16 length;
 	int i, size, ret = 0;
+	u16 ctnr_hdr_align = container_hdr_alignment();
 
-	size = ALIGN(CONTAINER_HDR_ALIGNMENT, spl_get_bl_len(info));
+	size = ALIGN(ctnr_hdr_align, spl_get_bl_len(info));
 
 	/*
 	 * It will not override the ATF code, so safe to use it here,
@@ -197,7 +198,7 @@ static int read_auth_container(struct spl_image_info *spl_image,
 	ctnr_log("read_auth_container: reading hdr @off 0x%lx size 0x%x bl_len %u\n",
 		 offset, size, spl_get_bl_len(info));
 	if (info->read(info, offset, size, container) <
-	    CONTAINER_HDR_ALIGNMENT) {
+	    ctnr_hdr_align) {
 		ctnr_log("read_auth_container: short read of container header @0x%lx\n",
 			 offset);
 		ret = -EIO;
@@ -223,7 +224,7 @@ static int read_auth_container(struct spl_image_info *spl_image,
 	length = container->length_lsb + (container->length_msb << 8);
 	debug("Container length %u\n", length);
 
-	if (length > CONTAINER_HDR_ALIGNMENT) {
+	if (length > ctnr_hdr_align) {
 		size = ALIGN(length, spl_get_bl_len(info));
 
 		free(container);

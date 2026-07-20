@@ -12,10 +12,17 @@
 #define IV_MAX_LEN			32
 #define HASH_MAX_LEN			64
 
-#if IS_ENABLED(CONFIG_IMX_PQC_SUPPORT)
-#define CONTAINER_HDR_ALIGNMENT 0x4000
+#if IS_ENABLED(CONFIG_IMX95)
+u32 container_hdr_alignment(void);
 #else
-#define CONTAINER_HDR_ALIGNMENT 0x400
+static inline u32 container_hdr_alignment(void)
+{
+#if IS_ENABLED(CONFIG_IMX_PQC_SUPPORT)
+	return 0x4000;
+#else
+	return 0x400;
+#endif
+}
 #endif
 #define CONTAINER_HDR_EMMC_OFFSET 0
 #define CONTAINER_HDR_MMCSD_OFFSET SZ_32K
