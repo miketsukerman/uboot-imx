@@ -9,6 +9,7 @@
 #include <asm/arch/clock.h>
 #include <asm/arch/ddr.h>
 #include <asm/arch/sys_proto.h>
+#include <imx_container.h>
 #include <asm/armv8/mmu.h>
 #include <asm/mach-imx/boot_mode.h>
 #include <asm/mach-imx/optee.h>
@@ -2301,3 +2302,10 @@ void *arch_get_container_trampoline(void)
 
 	return (void *)((ulong)CFG_SYS_SDRAM_BASE + size - SZ_16M);
 }
+
+#if IS_ENABLED(CONFIG_IMX95)
+u32 container_hdr_alignment(void)
+{
+	return is_imx95_a0() ? 0x400 : 0x4000;
+}
+#endif
