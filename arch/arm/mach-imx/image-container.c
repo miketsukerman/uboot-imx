@@ -16,6 +16,19 @@
 #include <asm/arch/sys_proto.h>
 #include <asm/mach-imx/boot_mode.h>
 
+/*
+ * Verbose boot logging to help narrow down SPL container parsing / image set
+ * offset problems (e.g. jumping into an unloaded / all-zero U-Boot image).
+ * These messages are emitted via printf() so they are visible on the console
+ * without a full DEBUG build. Set IMX_CTNR_LOG_ENABLED to 0 to silence them.
+ */
+#define IMX_CTNR_LOG_ENABLED	1
+#define ctnr_log(fmt, args...)						\
+	do {								\
+		if (IMX_CTNR_LOG_ENABLED)				\
+			printf("[IMX-CTNR] " fmt, ##args);		\
+	} while (0)
+
 #define MMC_DEV		0
 #define QSPI_DEV	1
 #define NAND_DEV	2
@@ -67,7 +80,10 @@ static bool is_v2x_fw_container(ulong addr)
 	struct boot_img_t *img_entry;
 
 	phdr = (struct container_hdr *)addr;
+	ctnr_log("is_v2x_fw_container: addr 0x%lx tag 0x%02x ver 0x%02x num_images %u\n",
+		 addr, phdr->tag, phdr->version, phdr->num_images);
 	if ((phdr->tag != 0x87 && phdr->tag != 0x82) || phdr->version != 0x0) {
+		ctnr_log("is_v2x_fw_container: wrong container header\n");
 		debug("Wrong container header\n");
 		return false;
 	}
@@ -75,9 +91,17 @@ static bool is_v2x_fw_container(ulong addr)
 	if (phdr->num_images >= MIN_V2X_CTNR_IMG_NUM && phdr->num_images <= MAX_V2X_CTNR_IMG_NUM) {
 		img_entry = (struct boot_img_t *)(addr + sizeof(struct container_hdr));
 
+		ctnr_log("is_v2x_fw_container: img0 type 0x%x core %u\n",
+			 IMG_FLAGS_IMG_TYPE(img_entry->hab_flags),
+			 IMG_FLAGS_CORE_ID(img_entry->hab_flags));
+
 		if (IMG_FLAGS_IMG_TYPE(img_entry->hab_flags) == IMG_TYPE_V2X_PRI_FW &&
 		    IMG_FLAGS_CORE_ID(img_entry->hab_flags) == CORE_V2X_PRI) {
 			img_entry++;
+
+			ctnr_log("is_v2x_fw_container: img1 type 0x%x core %u\n",
+				 IMG_FLAGS_IMG_TYPE(img_entry->hab_flags),
+				 IMG_FLAGS_CORE_ID(img_entry->hab_flags));
 
 			if (IMG_FLAGS_IMG_TYPE(img_entry->hab_flags) == IMG_TYPE_V2X_SND_FW &&
 			    IMG_FLAGS_CORE_ID(img_entry->hab_flags) == CORE_V2X_SND)
@@ -85,6 +109,7 @@ static bool is_v2x_fw_container(ulong addr)
 		}
 	}
 
+	ctnr_log("is_v2x_fw_container: not a v2x container\n");
 	return false;
 }
 
@@ -98,6 +123,8 @@ int get_container_size(ulong addr, u16 *header_length)
 
 	phdr = (struct container_hdr *)addr;
 	if (!valid_container_hdr(phdr)) {
+		ctnr_log("get_container_size: wrong container header @0x%lx (tag 0x%02x ver 0x%02x)\n",
+			 addr, phdr->tag, phdr->version);
 		debug("Wrong container header\n");
 		return -EFAULT;
 	}
@@ -106,12 +133,20 @@ int get_container_size(ulong addr, u16 *header_length)
 	if (header_length)
 		*header_length = max_offset;
 
+	ctnr_log("get_container_size: @0x%lx tag 0x%02x ver 0x%02x hdr_len 0x%x num_images %u\n",
+		 addr, phdr->tag, phdr->version, max_offset, phdr->num_images);
+
 	img_entry = (struct boot_img_t *)(addr + sizeof(struct container_hdr));
 	for (i = 0; i < phdr->num_images; i++) {
 		img_end = img_entry->offset + img_entry->size;
 		if (img_end > max_offset)
 			max_offset = img_end;
 
+		ctnr_log("  img[%u] off 0x%x size 0x%x dst 0x%llx entry 0x%llx flags 0x%x end 0x%x\n",
+			 i, img_entry->offset, img_entry->size,
+			 (unsigned long long)img_entry->dst,
+			 (unsigned long long)img_entry->entry,
+			 img_entry->hab_flags, img_end);
 		debug("img[%u], end = 0x%x\n", i, img_end);
 
 		img_entry++;
@@ -124,9 +159,12 @@ int get_container_size(ulong addr, u16 *header_length)
 		if (phdr->sig_blk_offset + len > max_offset)
 			max_offset = phdr->sig_blk_offset + len;
 
+		ctnr_log("  sigblk off 0x%x len 0x%x end 0x%x\n",
+			 phdr->sig_blk_offset, len, phdr->sig_blk_offset + len);
 		debug("sigblk, end = 0x%x\n", phdr->sig_blk_offset + len);
 	}
 
+	ctnr_log("get_container_size: total 0x%x\n", max_offset);
 	return max_offset;
 }
 
@@ -149,6 +187,9 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 				  offset / mmc->read_bl_len,
 				  CONTAINER_HDR_ALIGNMENT / mmc->read_bl_len,
 				  buf);
+		ctnr_log("get_dev_container_size: MMC read off 0x%lx (sector %lu, %u bytes) -> %lu blocks\n",
+			 offset, offset / mmc->read_bl_len,
+			 CONTAINER_HDR_ALIGNMENT, count);
 		if (count == 0) {
 			free(buf);
 			printf("Read container image from MMC/SD failed\n");
@@ -209,6 +250,10 @@ static int get_dev_container_size(void *dev, int dev_type, unsigned long offset,
 
 	if (v2x_cntr)
 		*v2x_cntr = is_v2x_fw_container((ulong)buf);
+
+	ctnr_log("get_dev_container_size: dev_type %d off 0x%lx -> size %d hdr_len 0x%x v2x %d\n",
+		 dev_type, offset, ret, header_length ? *header_length : 0,
+		 v2x_cntr ? *v2x_cntr : -1);
 
 	free(buf);
 
@@ -362,6 +407,8 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 	bool v2x_fw = false;
 
 	offset[0] = get_boot_device_offset(dev, dev_type);
+	ctnr_log("get_imageset_end: dev_type %d seco offset[0] 0x%lx\n",
+		 dev_type, offset[0]);
 
 	value_container[0] = get_dev_container_size(dev, dev_type, offset[0], &hdr_length, NULL);
 	if (value_container[0] < 0) {
@@ -369,14 +416,19 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 		return 0;
 	}
 
+	ctnr_log("get_imageset_end: seco size 0x%x hdr_len 0x%x\n",
+		 value_container[0], hdr_length);
 	debug("seco container size 0x%x\n", value_container[0]);
 
 	if (is_imx8dxl() || is_imx95() || is_imx94() || is_imx952()) {
 		offset[1] = ALIGN(hdr_length, CONTAINER_HDR_ALIGNMENT) + offset[0];
+		ctnr_log("get_imageset_end: v2x offset[1] 0x%lx\n", offset[1]);
 
 		value_container[1] = get_dev_container_size(dev, dev_type, offset[1], &hdr_length, &v2x_fw);
 		if (value_container[1] < 0) {
 			printf("Parse v2x container failed %d\n", value_container[1]);
+			ctnr_log("get_imageset_end: v2x parse failed, end = seco 0x%lx\n",
+				 value_container[0] + offset[0]);
 			return value_container[0] + offset[0]; /* return seco container total size */
 		}
 
@@ -392,16 +444,24 @@ static __maybe_unused ulong get_imageset_end(void *dev, int dev_type)
 		offset[2] = ALIGN(hdr_length, CONTAINER_HDR_ALIGNMENT) + offset[0];
 	}
 
+	ctnr_log("get_imageset_end: scu/next offset[2] 0x%lx\n", offset[2]);
+
 	value_container[2] = get_dev_container_size(dev, dev_type, offset[2], &hdr_length, NULL);
 	if (value_container[2] < 0) {
 		debug("Parse scu container image failed %d, only seco container\n", value_container[2]);
-		if (is_imx8dxl() || is_imx95() || is_imx94() || is_imx952())
+		if (is_imx8dxl() || is_imx95() || is_imx94() || is_imx952()) {
+			ctnr_log("get_imageset_end: scu parse failed, end = seco+v2x 0x%lx\n",
+				 value_container[1] + offset[1]);
 			return value_container[1] + offset[1]; /* return seco + v2x container total size */
-		else
+		} else {
+			ctnr_log("get_imageset_end: scu parse failed, end = seco 0x%lx\n",
+				 value_container[0] + offset[0]);
 			return value_container[0] + offset[0]; /* return seco container total size */
+		}
 	}
 
 	debug("scu container size 0x%x\n", value_container[2]);
+	ctnr_log("get_imageset_end: end = 0x%lx\n", value_container[2] + offset[2]);
 
 	return value_container[2] + offset[2];
 }
@@ -430,6 +490,8 @@ unsigned long arch_spl_mmc_get_uboot_raw_sector(struct mmc *mmc,
 	end = ROUND(end, SZ_1K);
 
 	printf("Load image from MMC/SD 0x%lx\n", end);
+	ctnr_log("arch_spl_mmc_get_uboot_raw_sector: end 0x%lx blk_len %u -> sector 0x%lx\n",
+		 end, mmc->read_bl_len, end / mmc->read_bl_len);
 
 	return end / mmc->read_bl_len;
 }

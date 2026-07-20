@@ -24,6 +24,18 @@
 #define LZ4_OFFSET	0x00800000
 #endif
 
+/*
+ * Verbose SPL container load logging to help narrow down image load / entry
+ * point problems (e.g. jumping into an unloaded / all-zero image). Emitted via
+ * printf() so it is visible without a full DEBUG build. Set to 0 to silence.
+ */
+#define IMX_CTNR_LOG_ENABLED	1
+#define ctnr_log(fmt, args...)						\
+	do {								\
+		if (IMX_CTNR_LOG_ENABLED)				\
+			printf("[IMX-CTNR] " fmt, ##args);		\
+	} while (0)
+
 __weak bool arch_check_dst_in_secure(void *start, ulong size)
 {
 	return false;
@@ -47,6 +59,7 @@ static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
 {
 	struct boot_img_t *images;
 	ulong offset, size;
+	ulong read;
 	void *buf, *trampoline;
 
 	if (image_index > container->num_images) {
@@ -75,6 +88,12 @@ static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
 	size = ALIGN(images[image_index].size, spl_get_bl_len(info));
 	offset = images[image_index].offset + container_offset;
 
+	ctnr_log("read_auth_image[%d]: file_off 0x%lx dst 0x%llx entry 0x%llx size 0x%lx(aligned) raw_size 0x%x flags 0x%x\n",
+		 image_index, offset,
+		 (unsigned long long)images[image_index].dst,
+		 (unsigned long long)images[image_index].entry,
+		 size, images[image_index].size, images[image_index].hab_flags);
+
 	debug("%s: container: %p offset: %lu size: %lu\n", __func__,
 	      container, offset, size);
 
@@ -87,17 +106,37 @@ static struct boot_img_t *read_auth_image(struct spl_image_info *spl_image,
 			return NULL;
 		}
 
-		if (info->read(info, offset, size, trampoline) < images[image_index].size) {
+		ctnr_log("read_auth_image[%d]: loading via trampoline %p to secure dst %p\n",
+			 image_index, trampoline, buf);
+
+		read = info->read(info, offset, size, trampoline);
+		ctnr_log("read_auth_image[%d]: trampoline read returned 0x%lx (expected >= 0x%x)\n",
+			 image_index, read, images[image_index].size);
+		if (read < images[image_index].size) {
 			printf("%s: failed to load image to a trampoline buffer\n", __func__);
 			return NULL;
 		}
 
 		memcpy(buf, trampoline, images[image_index].size);
 	} else {
-		if (info->read(info, offset, size, buf) < images[image_index].size) {
+		read = info->read(info, offset, size, buf);
+		ctnr_log("read_auth_image[%d]: read returned 0x%lx (expected >= 0x%x) into dst %p\n",
+			 image_index, read, images[image_index].size, buf);
+		if (read < images[image_index].size) {
 				printf("%s: failed to load image to a non-secure region\n", __func__);
 			return NULL;
 		}
+	}
+
+	if (IMX_CTNR_LOG_ENABLED) {
+		u32 *w = (u32 *)buf;
+
+		ctnr_log("read_auth_image[%d]: first words @dst 0x%llx: %08x %08x %08x %08x\n",
+			 image_index, (unsigned long long)images[image_index].dst,
+			 w[0], w[1], w[2], w[3]);
+		if (!w[0] && !w[1] && !w[2] && !w[3])
+			ctnr_log("read_auth_image[%d]: WARNING destination looks empty (all zero) after load\n",
+				 image_index);
 	}
 
 #ifdef CONFIG_AHAB_BOOT
@@ -150,11 +189,19 @@ static int read_auth_container(struct spl_image_info *spl_image,
 
 	debug("%s: container: %p offset: %lu size: %u\n", __func__,
 	      container, offset, size);
+	ctnr_log("read_auth_container: reading hdr @off 0x%lx size 0x%x bl_len %u\n",
+		 offset, size, spl_get_bl_len(info));
 	if (info->read(info, offset, size, container) <
 	    CONTAINER_HDR_ALIGNMENT) {
+		ctnr_log("read_auth_container: short read of container header @0x%lx\n",
+			 offset);
 		ret = -EIO;
 		goto end;
 	}
+
+	ctnr_log("read_auth_container: hdr tag 0x%02x ver 0x%02x num_images %u sig_blk_off 0x%x\n",
+		 container->tag, container->version, container->num_images,
+		 container->sig_blk_offset);
 
 	if (!valid_container_hdr(container)) {
 		log_err("Wrong container header\n");
@@ -210,8 +257,13 @@ static int read_auth_container(struct spl_image_info *spl_image,
 		if (i == 0) {
 			spl_image->load_addr = image->dst;
 			spl_image->entry_point = image->entry;
+			ctnr_log("read_auth_container: image 0 -> load_addr 0x%lx entry_point 0x%lx\n",
+				 spl_image->load_addr, spl_image->entry_point);
 		}
 	}
+
+	ctnr_log("read_auth_container: done, SPL will hand off load_addr 0x%lx entry_point 0x%lx\n",
+		 spl_image->load_addr, spl_image->entry_point);
 
 #if defined(CONFIG_SPL_BUILD) && defined(CONFIG_IMX_TRUSTY_OS)
 	/* Everything checks out, get the sw_version now. */
