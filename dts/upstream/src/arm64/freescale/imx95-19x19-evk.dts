@@ -24,6 +24,7 @@
 
 	aliases {
 		ethernet0 = &enetc_port0;
+		ethernet1 = &enetc_port2;
 		gpio0 = &gpio1;
 		gpio1 = &gpio2;
 		gpio2 = &gpio3;
@@ -145,6 +146,58 @@
 		startup-delay-us = <5000>;
 	};
 
+	reg_aqr_stby: regulator-aqr-stby {
+		compatible = "regulator-fixed";
+		regulator-name = "aqr-stby";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&i2c5_pcal6408 1 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	reg_aqr_en: regulator-aqr-en {
+		compatible = "regulator-fixed";
+		regulator-name = "aqr-en";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&reg_aqr_stby>;
+		gpio = <&i2c5_pcal6408 0 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	reg_serdes_stby: regulator-mac-stby {
+		compatible = "regulator-fixed";
+		regulator-name = "mac-stby";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&i2c7_pcal6524 13 GPIO_ACTIVE_LOW>;
+	};
+
+	reg_serdes_en: regulator-mac-en {
+		compatible = "regulator-fixed";
+		regulator-name = "mac-en";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&reg_serdes_stby>;
+		gpio = <&i2c5_pcal6408 3 GPIO_ACTIVE_LOW>;
+	};
+
+	reg_usb_otg_vbus: regulator-usb-otg-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb_otg_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&gpio_exp2 13 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	extcon_usb_otg: extcon-usb-otg {
+		compatible = "linux,extcon-usb-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_usb_otg>;
+		id-gpios = <&gpio4 14 GPIO_ACTIVE_HIGH>;
+	};
+
 	reg_pcie0: regulator-pcie {
 		compatible = "regulator-fixed";
 		regulator-name = "PCIE_WLAN_EN";
@@ -248,6 +301,14 @@
 	status = "okay";
 };
 
+&enetc_port2 {
+	phy-handle = <&ethphy2>;
+	phy-mode = "10gbase-r";
+	serdes-supply = <&reg_serdes_en>;
+	managed = "in-band-status";
+	status = "okay";
+};
+
 &flexcan1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_flexcan1>;
@@ -267,17 +328,14 @@
 	pinctrl-0 = <&pinctrl_flexspi1>;
 	status = "okay";
 
-	flash@0 {
-		compatible = "jedec,spi-nor";
+	flash0: w25q64jwssiq@0 {
+		compatible = "jedec,spi-nor", "winbond,w25q64";
 		reg = <0>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&pinctrl_flexspi1_reset>;
-		reset-gpios = <&gpio5 11 GPIO_ACTIVE_LOW>;
 		#address-cells = <1>;
 		#size-cells = <1>;
-		spi-max-frequency = <200000000>;
-		spi-tx-bus-width = <8>;
-		spi-rx-bus-width = <8>;
+		spi-max-frequency = <29000000>;
+		spi-tx-bus-width = <4>;
+		spi-rx-bus-width = <4>;
 	};
 };
 
@@ -286,6 +344,15 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_lpi2c2>;
 	status = "okay";
+
+	gpio_exp2: gpio@21 {
+		compatible = "nxp,pcal6416";
+		reg = <0x21>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		vcc-supply = <&reg_vref_1v8>;
+	};
+
 
 	adp5585: io-expander@34 {
 		compatible = "adi,adp5585-00", "adi,adp5585";
@@ -522,14 +589,20 @@
 &netc_emdio {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_emdio>;
+	phy-supply = <&reg_aqr_en>;
 	status = "okay";
 
 	ethphy0: ethernet-phy@1 {
 		reg = <1>;
+		eee-broken-1000t;
 		reset-gpios = <&i2c5_pcal6408 2 GPIO_ACTIVE_LOW>;
 		reset-assert-us = <10000>;
 		reset-deassert-us = <80000>;
-		realtek,clkout-disable;
+	};
+
+	ethphy2: ethernet-phy@8 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <8>;
 	};
 };
 
@@ -623,12 +696,8 @@
 &usb3_dwc3 {
 	dr_mode = "otg";
 	hnp-disable;
-	srp-disable;
-	adp-disable;
-	usb-role-switch;
-	role-switch-default-mode = "peripheral";
-	snps,dis-u1-entry-quirk;
-	snps,dis-u2-entry-quirk;
+	extcon = <&extcon_usb_otg>;
+	vbus-supply = <&reg_usb_otg_vbus>;
 	status = "okay";
 
 	port {
@@ -693,10 +762,16 @@
 };
 
 &scmi_iomuxc {
+	pinctrl_usb_otg: usb-otg-grp {
+		fsl,pins = <
+			IMX95_PAD_ENET2_MDC__GPIO4_IO_BIT14			0x31e
+		>;
+	};
+
 	pinctrl_emdio: emdiogrp {
 		fsl,pins = <
-			IMX95_PAD_ENET1_MDC__NETCMIX_TOP_NETC_MDC		0x50e
-			IMX95_PAD_ENET1_MDIO__NETCMIX_TOP_NETC_MDIO		0x90e
+			IMX95_PAD_ENET1_MDC__NETCMIX_TOP_NETC_MDC		0x57e
+			IMX95_PAD_ENET1_MDIO__NETCMIX_TOP_NETC_MDIO		0x97e
 		>;
 	};
 

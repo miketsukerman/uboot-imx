@@ -152,7 +152,7 @@
 &flexspi1 {
 	bootph-pre-ram;
 
-	flash@0{
+	w25q64jwssiq@0{
 		bootph-pre-ram;
 	};
 };
