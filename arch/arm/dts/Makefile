@@ -955,12 +955,15 @@ dtb-$(CONFIG_ARCH_IMX9) += \
 	imx95-19x19-frdm-pro.dtb \
 	imx95-19x19-verdin.dtb \
 	imx952-evk.dtb \
+	imx952-frdm.dtb \
 	imx943-orangebox.dtb \
 	imx91-9x9-qsb.dtb \
-	imx91-11x11-frdm-imx91s.dtb \
+	imx91-11x11-frdm-s.dtb \
 	imx93w-evk.dtb \
 	imx93w-frdm.dtb \
-	imx93-var-som-symphony.dtb
+	imx93-var-som-symphony.dtb \
+	imx937-evk.dtb \
+	imx937-frdm.dtb
 
 dtb-$(CONFIG_ARCH_IMXRT) += imxrt1020-evk.dtb \
 	imxrt1170-evk.dtb \

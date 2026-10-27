@@ -4,6 +4,11 @@
  */
 
 #include <env.h>
+#ifdef CONFIG_ANDROID_SUPPORT
+#include <net.h>
+#include <asm/setup.h>
+#include <asm/bootm.h>
+#endif
 #include <efi_loader.h>
 #include <init.h>
 #include <fdt_support.h>
@@ -24,6 +29,9 @@
 #include <dm/uclass-internal.h>
 #include <asm/arch/crrm.h>
 #include "../arch/arm/dts/imx952-power.h"
+#if IS_ENABLED(CONFIG_IMX952_ENETC_SGMII)
+#include <scmi_nxp_protocols.h>
+#endif
 
 #define PD_HSIO_TOP IMX952_PD_HSIO_TOP
 #define PD_NETC IMX952_PD_NETC
@@ -207,6 +215,82 @@ static bool is_netc_cfg(void)
 	return false;
 }
 
+#if IS_ENABLED(CONFIG_IMX952_ENETC_SGMII)
+#define IMX952_COMBO_PHY_MODE_SGMII	3
+
+static int configure_si5332(void)
+{
+	struct udevice *bus, *dev;
+	int ret;
+
+	ret = uclass_get_device_by_name(UCLASS_I2C, "i2c@422f0000", &bus);
+	if (ret) {
+		printf("%s: failed to get SI5332 I2C bus, ret %d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = i2c_get_chip(bus, 0x6a, 1, &dev);
+	if (ret) {
+		printf("%s: failed to find SI5332 at addr 0x6a, ret %d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = dm_i2c_reg_write(dev, 0x42, 0x0a);
+	if (ret) {
+		printf("%s: failed to write SI5332 reg 0x42, ret %d\n", __func__, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int do_comphy_mode(u32 mode)
+{
+	struct udevice *dev;
+	int ret;
+
+	ret = uclass_get_device_by_name(UCLASS_CLK, "protocol@14", &dev);
+	if (ret)
+		return ret;
+
+	ret = imx9_scmi_power_domain_enable(PD_HSIO_TOP, false);
+	if (ret) {
+		printf("Poweroff HSIO failed\n");
+		return -EIO;
+	}
+
+	set_combo_phy_mode(dev, mode);
+
+	ret = imx9_scmi_power_domain_enable(PD_HSIO_TOP, true);
+	if (ret) {
+		printf("Poweron HSIO failed\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int enetc_sgmii_phy_en(void)
+{
+	struct udevice *dev;
+	int ret;
+
+	ret = regulator_get_by_devname("regulator-si5332-en", &dev);
+	if (ret) {
+		printf("Get regulator-si5332-en failed %d\n", ret);
+		return ret;
+	}
+
+	ret = regulator_set_enable_if_allowed(dev, true);
+	if (ret) {
+		printf("Enable regulator-si5332-en %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+#endif
+
 void netc_init(void)
 {
 	int ret;
@@ -227,7 +311,7 @@ void netc_init(void)
 	netc_phy_rst("i2c6_io@21_13", "ENET1_RST_B");
 }
 
-static void pcie_setup(void)
+static void pcie_setup(bool enable)
 {
 	int ret;
 	struct udevice *dev;
@@ -238,11 +322,49 @@ static void pcie_setup(void)
 		return;
 	}
 
-	ret = regulator_set_enable_if_allowed(dev, true);
+	ret = regulator_set_enable_if_allowed(dev, enable);
 	if (ret) {
 		printf("Enable regulator-m2-pwr regulator %d\n", ret);
 		return;
 	}
+}
+
+static bool board_is_sgmii(void)
+{
+	const char *sgmii_dtb = "imx952-evk-sgmii.dtb";
+	const char *fdtfile;
+
+	fdtfile = env_get("fdtfile");
+	if (!fdtfile)
+		return false;
+
+	/* fdtfile may or may not be wrapped in double quotes */
+	if (*fdtfile == '"')
+		fdtfile++;
+
+	return !strncmp(fdtfile, sgmii_dtb, strlen(sgmii_dtb));
+}
+
+static void pcie_perst_deassert(void)
+{
+	struct gpio_desc desc;
+	int ret;
+
+	ret = dm_gpio_lookup_name("i2c7_io@22_5", &desc);
+	if (ret) {
+		printf("%s lookup i2c7_io@22_5 failed ret = %d\n", __func__, ret);
+		return;
+	}
+
+	ret = dm_gpio_request(&desc, "pcie_perst");
+	if (ret) {
+		printf("%s request pcie_perst failed ret = %d\n", __func__, ret);
+		return;
+	}
+
+	/* pin is active-low, value 0 -> deasserted (inactive) */
+	dm_gpio_set_dir_flags(&desc, GPIOD_IS_OUT | GPIOD_ACTIVE_LOW);
+	dm_gpio_set_value(&desc, 0);
 }
 
 void lvds_backlight_on(void)
@@ -266,7 +388,13 @@ int board_init(void)
 	setup_typec();
 #endif
 
-	pcie_setup();
+#if IS_ENABLED(CONFIG_IMX952_ENETC_SGMII)
+	configure_si5332();
+	do_comphy_mode(IMX952_COMBO_PHY_MODE_SGMII);
+	enetc_sgmii_phy_en();
+#endif
+
+	pcie_setup(true);
 
 	netc_init();
 
@@ -280,6 +408,42 @@ int board_init(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_ANDROID_SUPPORT
+static void setup_eth_mac_if_empty(int dev_id, const char *envname)
+{
+	unsigned char mac[6];
+	struct tag_serialnr serial;
+
+	if (eth_env_get_enetaddr(envname, mac))
+		return;
+
+	imx_get_mac_from_fuse(dev_id, mac);
+	if (is_valid_ethaddr(mac)) {
+		eth_env_set_enetaddr(envname, mac);
+		return;
+	}
+
+	memset(&serial, 0, sizeof(serial));
+	get_board_serial(&serial);
+
+	mac[0] = (serial.high >> 16) & 0xff;
+	mac[1] = (serial.high >> 8)  & 0xff;
+	mac[2] =  serial.high        & 0xff;
+	mac[3] = (serial.low >> 16)  & 0xff;
+	mac[4] = (serial.low >> 8)   & 0xff;
+	mac[5] = (serial.low & 0xff) + (unsigned char)dev_id;
+
+	mac[0] |= 0x02;
+	mac[0] &= 0xfe;
+
+	if (!is_valid_ethaddr(mac))
+		net_random_ethaddr(mac);
+
+	eth_env_set_enetaddr(envname, mac);
+	printf("%s: derived stable MAC for %s: %pM\n", __func__, envname, mac);
+}
+#endif
 
 int board_late_init(void)
 {
@@ -304,6 +468,11 @@ int board_late_init(void)
 
 #if IS_ENABLED(CONFIG_IMX_CRRM)
 	crrm_uboot_late_init();
+#endif
+
+#ifdef CONFIG_ANDROID_SUPPORT
+	setup_eth_mac_if_empty(0, "ethaddr");
+	setup_eth_mac_if_empty(1, "eth1addr");
 #endif
 
 	return 0;
@@ -388,6 +557,19 @@ void board_quiesce_devices(void)
 {
 	int ret;
 	struct uclass *uc_dev;
+
+	ret = uclass_get(UCLASS_PCI, &uc_dev);
+	if (uc_dev)
+		ret = uclass_destroy(uc_dev);
+	if (ret)
+		printf("couldn't remove PCI devices\n");
+
+	pcie_setup(false);
+
+	if (board_is_sgmii()) {
+		printf("Deasserting M.2 PERST# for SGMII mode, keep PHY non-reset\n");
+		pcie_perst_deassert();
+	}
 
 	ret = imx9_scmi_power_domain_enable(PD_HSIO_TOP, false);
 	if (ret) {

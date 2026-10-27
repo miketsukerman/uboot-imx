@@ -4,6 +4,11 @@
  */
 
 #include <env.h>
+#ifdef CONFIG_ANDROID_SUPPORT
+#include <net.h>
+#include <asm/setup.h>
+#include <asm/bootm.h>
+#endif
 #include <efi_loader.h>
 #include <init.h>
 #include <fdt_support.h>
@@ -206,7 +211,7 @@ static void setup_typec(void)
 		/* Enable EXT PWR */
 		ret = get_board_version(rev, data);
 		if (ret == 0) {
-			if (rev[0] < 1) {
+			if (rev[0] < 2) {
 				ret = dm_gpio_lookup_name("GPIO5_9", &ext_pwr_desc);
 				if (ret) {
 					printf("%s lookup GPIO5_9 failed ret = %d\n",
@@ -425,13 +430,54 @@ int board_init(void)
 
 	netc_init();
 
+	/* For i.MX95-LP4-FRDM */
 	power_on_m7("mx95evkrpmsg");
+
+	/* For i.MX95-LP5-FRDM */
+	power_on_m7("mx95frdmrpmsg");
+
 #ifdef CONFIG_TARGET_IMX95_15X15_FRDM
 	lvds_backlight_on();
 #endif
 
 	return 0;
 }
+
+#ifdef CONFIG_ANDROID_SUPPORT
+static void setup_eth_mac_if_empty(int dev_id, const char *envname)
+{
+	unsigned char mac[6];
+	struct tag_serialnr serial;
+
+	if (eth_env_get_enetaddr(envname, mac))
+		return;
+
+	imx_get_mac_from_fuse(dev_id, mac);
+	if (is_valid_ethaddr(mac)) {
+		eth_env_set_enetaddr(envname, mac);
+		return;
+	}
+
+	memset(&serial, 0, sizeof(serial));
+	get_board_serial(&serial);
+
+	mac[0] = (serial.high >> 16) & 0xff;
+	mac[1] = (serial.high >> 8)  & 0xff;
+	mac[2] =  serial.high        & 0xff;
+	mac[3] = (serial.low >> 16)  & 0xff;
+	mac[4] = (serial.low >> 8)   & 0xff;
+	mac[5] = (serial.low & 0xff) + (unsigned char)dev_id;
+
+	mac[0] |= 0x02;
+	mac[0] &= 0xfe;
+
+	if (!is_valid_ethaddr(mac))
+		net_random_ethaddr(mac);
+
+	eth_env_set_enetaddr(envname, mac);
+	printf("%s: derived stable MAC for %s: %pM\n", __func__, envname, mac);
+}
+#endif
 
 int board_late_init(void)
 {
@@ -441,6 +487,11 @@ int board_late_init(void)
 	env_set("sec_boot", "no");
 #ifdef CONFIG_AHAB_BOOT
 	env_set("sec_boot", "yes");
+#endif
+
+#ifdef CONFIG_ANDROID_SUPPORT
+	setup_eth_mac_if_empty(0, "ethaddr");
+	setup_eth_mac_if_empty(1, "eth1addr");
 #endif
 
 	return 0;
@@ -524,7 +575,7 @@ int ft_board_setup(void *blob, struct bd_info *bd)
 
 	ret = get_board_version(rev, data);
 	if (ret == 0) {
-		if (rev[0] < 1) {
+		if (rev[0] < 2) {
 			/* For RevA and RevB, potentially remove or modify nodes */
 			board_fix_fdt_version(blob);
 		}
@@ -573,6 +624,12 @@ void board_quiesce_devices(void)
 {
 	int ret;
 	struct uclass *uc_dev;
+
+	ret = uclass_get(UCLASS_PCI, &uc_dev);
+	if (uc_dev)
+		ret = uclass_destroy(uc_dev);
+	if (ret)
+		printf("couldn't remove PCI devices\n");
 
 	ret = imx9_scmi_power_domain_enable(IMX95_PD_HSIO_TOP, false);
 	if (ret) {

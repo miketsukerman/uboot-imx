@@ -50,6 +50,10 @@ config IMX93
 	select ARMV8_SPL_EXCEPTION_VECTORS
 	select SYS_FSL_ERRATUM_052357
 
+config IMX937
+	bool
+	select IMX952
+
 config IMX91
 	bool
 	select IMX9
@@ -162,8 +166,32 @@ config TARGET_IMX93_11X11_EVK
 	select REGMAP
 	select SYSCON
 
+config TARGET_IMX93W_EVK
+	bool "imx93w_evk"
+	select OF_BOARD_FIXUP
+	select IMX93
+	imply OF_UPSTREAM
+	imply BOOTSTD_FULL
+	imply BOOTSTD_BOOTCOMMAND
+	select CMD_REMOTEPROC
+	select REMOTEPROC_IMX
+	select REGMAP
+	select SYSCON
+
 config TARGET_IMX93_11X11_FRDM
 	bool "imx93_11x11_frdm"
+	select OF_BOARD_FIXUP
+	select IMX93
+	select IMX9_LPDDR4X
+	imply BOOTSTD_FULL
+	imply BOOTSTD_BOOTCOMMAND
+	select CMD_REMOTEPROC
+	select REMOTEPROC_IMX
+	select REGMAP
+	select SYSCON
+
+config TARGET_IMX93W_FRDM
+	bool "imx93w_frdm"
 	select OF_BOARD_FIXUP
 	select IMX93
 	select IMX9_LPDDR4X
@@ -195,6 +223,18 @@ config TARGET_PHYCORE_IMX93
 	imply OF_UPSTREAM
 	select OF_BOARD_FIXUP
 	select OF_BOARD_SETUP
+
+config TARGET_IMX937_EVK
+	bool "imx937_evk"
+	select IMX937
+	imply BOOTSTD_BOOTCOMMAND
+	imply BOOTSTD_FULL
+	select CMD_REMOTEPROC
+	select REMOTEPROC_IMX
+	select REGMAP
+	select SYSCON
+	select IMX_SM_LMM
+	select IMX_SM_CPU
 
 config TARGET_IMX95_19X19_EVK
 	bool "imx95_19x19_evk"
@@ -229,6 +269,30 @@ config TARGET_IMX95_15X15_FRDM
 config TARGET_IMX95_19X19_FRDM_PRO
 	bool "imx95_19x19_frdm_pro"
 	select IMX95
+	imply BOOTSTD_BOOTCOMMAND
+	imply BOOTSTD_FULL
+	select CMD_REMOTEPROC
+	select REMOTEPROC_IMX
+	select REGMAP
+	select SYSCON
+	select IMX_SM_LMM
+	select IMX_SM_CPU
+
+config TARGET_IMX952_FRDM
+	bool "imx952_frdm"
+	select IMX952
+	imply BOOTSTD_BOOTCOMMAND
+	imply BOOTSTD_FULL
+	select CMD_REMOTEPROC
+	select REMOTEPROC_IMX
+	select REGMAP
+	select SYSCON
+	select IMX_SM_LMM
+	select IMX_SM_CPU
+
+config TARGET_IMX937_FRDM
+	bool "imx937_frdm"
+	select IMX937
 	imply BOOTSTD_BOOTCOMMAND
 	imply BOOTSTD_FULL
 	select CMD_REMOTEPROC
@@ -284,6 +348,7 @@ source "board/nxp/imx94_orangebox/Kconfig"
 source "board/nxp/imx95_evk/Kconfig"
 source "board/nxp/imx95_frdm/Kconfig"
 source "board/nxp/imx952_evk/Kconfig"
+source "board/nxp/imx952_frdm/Kconfig"
 source "board/toradex/smarc-imx95/Kconfig"
 source "board/toradex/verdin-imx95/Kconfig"
 
