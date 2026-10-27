@@ -27,8 +27,66 @@
 #include <asm/arch/sys_proto.h>
 #include <dm/uclass.h>
 #include <dm/uclass-internal.h>
-
+#include <net.h>
+#include <spi_flash.h>
+ 
 extern int board_fix_fdt_fuse(void *fdt);
+
+/*
+ * AOM-5521 keeps its MAC addresses in the module's SPI NOR. The
+ * Advantech factory test tool ("[CONFIG] - [Ethernet0..2 MAC] setting") writes
+ * one record per port into the FlexSPI NOR on the SMARC module, starting at
+ * 0xd0000 (768 KiB + 8 x 8 KiB) and 1 KiB apart; each record begins with the
+ * six MAC bytes, followed by the serial number and the manufacturing date.
+ * The Yocto 5.2 U-Boot read them back the same way.
+ *
+ * Record N goes to ethNaddr, i.e. to the port behind alias ethernetN: eth0 is
+ * GBE0 (enetc_port0, RGMII PHY at MDIO address 1) and eth1 is the 10G port
+ * (enetc_port2, 10GBase-R to the Aquantia PHY at MDIO address 8), in U-Boot
+ * and in Linux alike.
+ *
+ * This runs before initr_net(), so the Ethernet devices pick the address up
+ * from the environment when they probe, and fdt_fixup_ethernet() hands the
+ * same address to the kernel. A record that is blank or not a valid unicast
+ * address is ignored, leaving the fuse or random address the board would
+ * otherwise use; the 5.2 fallback to one fixed address is not carried over,
+ * since every unprogrammed board would then share it.
+ */
+#define AOM5521_BCFG_OFFSET	0xd0000
+#define AOM5521_BCFG_STRIDE	0x400
+#define AOM5521_BCFG_PORTS	3
+
+static void aom5521_mac_from_nor(void)
+{
+	struct spi_flash *flash;
+	u8 mac[ARP_HLEN];
+	int i;
+
+	flash = spi_flash_probe(CONFIG_SF_DEFAULT_BUS, CONFIG_SF_DEFAULT_CS,
+				CONFIG_SF_DEFAULT_SPEED, CONFIG_SF_DEFAULT_MODE);
+	if (!flash) {
+		printf("[ADVANTECH] MAC: SPI NOR not found\n");
+		return;
+	}
+
+	for (i = 0; i < AOM5521_BCFG_PORTS; i++) {
+		if (spi_flash_read(flash, AOM5521_BCFG_OFFSET +
+				   i * AOM5521_BCFG_STRIDE, ARP_HLEN, mac)) {
+			printf("[ADVANTECH] MAC: SPI NOR read failed\n");
+			break;
+		}
+
+		if (!is_valid_ethaddr(mac)) {
+			printf("[ADVANTECH] eth%d: no MAC programmed\n", i);
+			continue;
+		}
+
+		eth_env_set_enetaddr_by_index("eth", i, mac);
+		printf("[ADVANTECH] eth%d: MAC %pM\n", i, mac);
+	}
+
+	spi_flash_free(flash);
+}
 
 #if CONFIG_IS_ENABLED(EFI_HAVE_CAPSULE_SUPPORT)
 #define IMX_BOOT_IMAGE_GUID \
@@ -49,6 +107,30 @@ struct efi_capsule_update_info update_info = {
 	.images = fw_images,
 };
 #endif /* EFI_HAVE_CAPSULE_SUPPORT */
+
+static void setup_iomux_swrst(void)
+{
+	int ret;
+	struct gpio_desc desc;
+
+	ret = dm_gpio_lookup_name("GPIO2_27", &desc);
+	if (ret) {
+		printf("%s lookup GPIO2_27 failed ret = %d\n", __func__, ret);
+		return;
+	}
+
+	ret = dm_gpio_request(&desc, "SW_RESET_OUT");
+	if (ret) {
+		printf("%s request SW_RESET_OUT failed ret = %d\n", __func__, ret);
+		return;
+	}
+
+	dm_gpio_set_dir_flags(&desc, GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE |
+			      GPIOD_ACTIVE_LOW);
+	udelay(10000);
+	dm_gpio_set_value(&desc, 0);
+	udelay(80000);
+}
 
 #ifdef CONFIG_USB_TCPC
 struct tcpc_port port;
@@ -364,7 +446,7 @@ int board_init(void)
 #endif
 
 #if IS_ENABLED(CONFIG_TARGET_IMX95_19X19_EVK)
-	netc_regulator_enable("regulator-m2-pwr", true);
+	setup_iomux_swrst();
 #endif
 
 	netc_init();
@@ -418,6 +500,8 @@ int board_late_init(void)
 {
 	if (IS_ENABLED(CONFIG_ENV_IS_IN_MMC))
 		board_late_mmc_env_init();
+
+	aom5521_mac_from_nor();
 
 	env_set("sec_boot", "no");
 #ifdef CONFIG_AHAB_BOOT
